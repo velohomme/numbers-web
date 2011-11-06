@@ -1,0 +1,73 @@
+/* Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA */
+
+.money-container {
+	position: absolute;
+	background-color: #ECF4FF;
+	border-style:solid;
+	border-width: medium;
+	border-color: #0095cd;
+	padding: 5px;
+	font-size: 1em;
+}
+#wallet {
+	left: 0px;
+	width: 400px;
+	height: 400px;
+	text-align: left;
+}
+#countertop {
+	left: 420px;
+	width: 415px;
+	height: 400px;
+
+	overflow: auto;
+}
+#keypadContainer {
+	position: absolute;
+	left: 200px;
+	top: 40px;
+	width: 300px;
+	height: 300px;
+}
+#totalPaidField {
+	display: inline-block;
+	width: 65px;
+	color: black;
+}
+#clearCounterButton {
+	position: absolute;
+	left: 855px;
+	height: 40px;
+}
+#scoreKeeper {
+	position: absolute;
+	top: 120px;
+	left: 855px;
+}
+#footer {
+	position: absolute;
+	font-size: small;
+	left: 0px;
+	top: 420px;
+	width: 800px;
+	height: 400px;
+}
+.centime-small {
+	width: 65px;
+	height: 65px;
+}
+.centime-large {
+	width: 75px;
+	height: 75px;
+}
+.euro-piece {
+	width: 90px;
+	height: 90px;
+}
+.bill {
+	width: 190px;
+	height: 90px;
+}
+.money-container-instructions {
+	font-size: .6em;
+}

@@ -1,0 +1,346 @@
+<!-- Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA  -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<!-- saved from url=(0014)about:internet -->
+<head>
+    <title>Learn My Numbers - Time</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <link href="css/base.css" rel="stylesheet" type="text/css"/>
+    <link href="css/time.css" rel="stylesheet" type="text/css"/>  
+    <link href="css/jquery-ui-1.8.13.custom.css" rel="stylesheet" type="text/css"/> 
+	<script type="text/javascript" src="js/jquery-1.5.1.min.js" ></script>
+	<script type="text/javascript" src="js/jquery-ui-1.8.13.custom.min.js"></script>
+	<script type="text/javascript" src="js/raphael-min-1.5.2.js" ></script>
+	<script type="text/javascript" src="soundmanager2/script/soundmanager2.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+	<script type="text/javascript" src="js/SoundPlayer.js"></script>
+	<script type="text/javascript" src="js/Clock.js"></script>	
+	<script type="text/javascript" src="js/KeyPad.js"></script>	
+	<script type="text/javascript" src="js/ScoreKeeper.js"></script>	
+	<script type="text/javascript" src="js/GoogleAnalytics.js"></script>
+	
+	<script type="text/javascript">
+		IS_24_HOUR = false;
+		LocaleProperties = {};
+		lastDroppedId = 0;
+		speller = {};
+		soundPlayer = undefined;
+		clock = undefined;
+		scoreKeeper = undefined;
+		
+		function setPageProperties() {
+			var locales = {
+				'fr-fr':{language:'french', soundsFolder:'fr', speller:'france', is24Hour: true, clockConstructor: FrenchClock}, 
+				'en-us':{language: 'english', soundsFolder:'us', speller:'us', is24Hour: false, clockConstructor: AmericanClock},
+				'en-us-24':{language: 'english', soundsFolder:'us', speller:'us', is24Hour: true, clockConstructor: AmericanClock}
+			};
+			setLocale(locales, 'en-us');
+			soundPlayer = new SoundPlayer(LocaleProperties.soundsFolder);
+			clock = new LocaleProperties.clockConstructor();
+		}
+
+		function switchInstructionsLang(languageCode) {
+			persistInstructionsLang(languageCode);
+			// load via on-demand javascript so we don't have to load all languages initially
+			loadScript('text-time-' + languageCode);
+		}
+		
+		function generateNew() {
+			sendTrackingEvent('Time', 'NewSound');
+			temporarilyDisableNewButton();
+			if (isVisualMode()) {
+				clock.reset();
+				updateGuessedTimeFromClock();
+			} else {
+				setGuessedTimeFieldValue('');
+			}
+			updateGuessedViews();
+			clock.generateNewTime(isFiveMinIncrementsOnly());
+			playTime();
+			scoreKeeper.testStarted();
+		}
+
+		function temporarilyDisableNewButton() {
+			// disable the button for x milliseconds to deal with impatient user
+			$('#newValueButton').attr('disabled', 'disabled');
+			setTimeout(enableNewButton, 3000);
+		}
+		
+		function enableNewButton() {
+			$('#newValueButton').attr('disabled', '');
+		}
+		
+		function playTime(isRepeat) {
+			var sounds = isInContext() ? clock.getTimeInContextSounds() : clock.getTimeSounds();
+			displayWords(sounds);
+			playSounds(sounds, function() {
+				makeGuessedElementsVisibile(true);
+				updateGuessedViews(); 
+				scoreKeeper.refreshView();
+			}, function() {
+				enableNewButton();
+				if (!isRepeat) {
+					preloadNextTime();
+				}
+			});
+		}
+		
+		function preloadNextTime() {
+			clock.preloadNextTime(isFiveMinIncrementsOnly());
+			soundPlayer.loadSounds(clock.getNextTimeInContextSounds());
+		}
+		
+		function isFiveMinIncrementsOnly() {
+			return $('#fiveMinuteIncrements').is(':checked');
+		}
+		
+		function isInContext() {
+			return $('#inContext').is(':checked');
+		}
+		
+		function makeGuessedElementsVisibile(shouldBeVisible) {
+			invisible('repeatButton', !shouldBeVisible);
+			invisible('keypadContainer', !shouldBeVisible);
+			invisible('visualClock', !shouldBeVisible);
+		}
+		
+		function updateGuessedViews() {
+			var shouldShowTimeGuessed = clock.getTimeInContextSounds().length != 0;
+			$('#timeGuessed').toggleClass('invisible', !shouldShowTimeGuessed);
+			var isAmountEmpty = getGuessedTimeFieldValue() == '';
+			$('#checkAnswerButton').toggleClass('invisible', !shouldShowTimeGuessed || isAmountEmpty);
+		}
+		
+		function displayWords(arrayOfSounds) {
+			$('#responseWords').html(speller.getWrittenPhrase(arrayOfSounds));
+			showWords();
+		}
+
+		function checkTimeSet() {
+			var timeGuessed = validateTimeGuessed();
+			if (timeGuessed) {
+				var clockReponseSounds = clock.getGuessResponseSounds(timeGuessed);
+				displayWords(clockReponseSounds);
+				playSounds(clockReponseSounds);
+				if (clock.isTimeCorrect(timeGuessed)) {
+					flashTimeGuessSuccess(true);
+					scoreKeeper.testCompleted();
+					scoreKeeper.refreshView();
+					sendTrackingEvent('Time', 'CheckAnswer', 'Correct');
+				} else {
+					flashTimeGuessSuccess(false);
+					sendTrackingEvent('Time', 'CheckAnswer', 'Incorrect');
+				}
+			}
+		}
+		
+		function flashTimeGuessSuccess(isCorrect) {
+			flashGuessIndicator($('#guessedField'), isCorrect, false);
+			flashGuessIndicator($('#responseWords'), isCorrect, false);
+			flashGuessIndicator($('#checkAnswerButton'), isCorrect, true);
+		}
+
+		function refreshLimits() {
+			$('#numberLimits input').each(function() {refreshLimit(this.id)});
+		} 
+		
+		function refreshLimit(fieldName) {
+			$('#' + fieldName).val(clock.getLimits()[fieldName]);
+		} 
+		
+		function validateLimit(fieldName) {
+			var value = getFieldValue(fieldName);
+			var isHour = fieldName.indexOf('hour') > -1;
+			if (value >= 0 && value <= (isHour ? clock.getHourMax() : 59)) {
+				// if setting min but max is < min then adjust it (vice versa for max)
+				var partnerFieldSuffix = fieldName.indexOf('Min') > -1 ? 'Max' : 'Min';
+				var typeName = fieldName.indexOf('hour') > -1 ? 'hour' : 'minute';
+				var partnerFieldName = typeName + partnerFieldSuffix;
+				var partnerValue = getFieldValue(partnerFieldName);
+				if (partnerFieldSuffix == 'Max' && partnerValue < value ||
+					partnerFieldSuffix == 'Min' && partnerValue > value) {
+						clock.getLimits()[partnerFieldName] = value;
+				}
+				return value;
+			} else {
+				displayError(InstructionsText[isHour ? 'InvalidHourMinMax' : 'InvalidMinuteMinMax']);
+				return -1;
+			}
+		} 
+		
+		function getFieldValue(fieldName) {
+			return parseInt($('#' + fieldName).val(), 10);
+		}
+		
+		function validateTimeGuessed() {
+			var guessedTime = getGuessedTimeFieldValue();
+			guessedTime = clock.parseTimeString(guessedTime);
+			setGuessedTimeFieldValue(guessedTime.format());
+			return guessedTime;
+		} 
+		
+		function getGuessedTimeFieldValue() {
+			return jQuery.trim($('#guessedField').html());	
+		}
+		
+		function setGuessedTimeFieldValue(stringValue) {
+			$('#guessedField').html(stringValue);	
+		}
+		
+		function setLimit(fieldName) {
+			var value = validateLimit(fieldName);
+			if (value > -1) {
+				clock.getLimits()[fieldName] = value;
+				clock.clearPreloadTime();
+			}
+			refreshLimits();
+		} 
+		
+		function showVisualClock(shouldShow) {
+			// display/hide the money drag/drop view
+			$('#visualClock').toggleClass('hidden', !shouldShow);
+			// hide the keypad if we are in visual mode
+			$('#keypadContainer').toggleClass('hidden', shouldShow);
+			setGuessedTimeFieldValue('');
+			if (shouldShow) {
+				clock.resetGuessed();
+				updateGuessedTimeFromClock();
+			} 
+			updateGuessedViews();
+		}
+		
+		function showWords() {
+			var shouldShow = $('#showWords').is(':checked');
+			shouldShow = shouldShow && !isEmpty($('#responseWords').html());
+			$('#word-response-container').toggleClass('hidden', !shouldShow);
+		}
+		
+		function drawKeyPad() {
+			new KeyPad($('#guessedField')).render($('#keypadContainer'), ":", 2, 2,updateGuessedViews);
+		}
+		
+		function isVisualMode() {
+			return $('#showVisualCheckBox').is(':checked'); 
+		}
+		
+		function initOptions() {
+			showVisualClock(true);
+			refreshLimits();
+		} 
+		
+		function initVisualClock() {
+			clock.draw($('#visualClock'), updateGuessedTimeFromClock, LocaleProperties.is24Hour);
+		}
+		
+		function updateGuessedTimeFromClock() {
+			setGuessedTimeFieldValue(clock.getTimeGuessed().format());
+			updateGuessedViews();
+		}
+		
+		function initScoreKeeper() {
+			scoreKeeper = new ScoreKeeper();
+			scoreKeeper.draw($('#score'));
+		}
+		
+		$(function() {
+			setPageProperties();
+			initVisualClock();
+			initScoreKeeper();
+			initOptions();
+			drawKeyPad();
+			setInitialInstructionsLang("en");
+			warnIosUsers();
+			setSpeller(LocaleProperties.speller);
+			initLocaleLinks();
+			setTimeout(preloadNextTime, 1000); // time to let sound manager start
+			showVisualClock(true);
+		});
+
+		function testSound() {
+			//playSounds(['feuros']);
+			playSounds(['ok that will be', '15 dollars', 'dollars', 'twenty two', 'cents please']);
+		} 
+	</script>
+	
+</head>
+<body >
+  <table border="0" class="text">
+  <tr>
+  <td  align="left">
+    <input type="image" id="excerciseImage" src="images/clock.jpg" onclick="location.href=location.href"/>
+  </td>
+  <td class="title" align="center" valign="middle">
+  	<span id="ExcerciseName">Excercise Name</span><br/><span id="LanguageName" class="text">Language</span>
+  </td>
+  <td align="left" valign="top">
+  	<ul class="options">
+  		<li><b><span id="OptionsHeading">Options</span></b>
+  		  	&nbsp;&nbsp;<input type="image" id="english-flag" class="flag" src="images/american-flag.jpeg" onclick="switchInstructionsLang('en')"/>
+  		  	&nbsp;&nbsp;<input type="image" id="french-flag" class="flag" src="images/france-flag.jpeg" onclick="switchInstructionsLang('fr')"/>
+  		</li>
+  		<li><input type="checkbox" checked="checked" id="showVisualCheckBox" onclick="showVisualClock(this.checked)"/>&nbsp;&nbsp;<span id="OptionsVisual">Visual (drag and drop money)</span></li>
+  		<li><input id="showWords" type="checkbox" checked="checked" onclick="showWords()"/>&nbsp;&nbsp;<span id="OptionsDisplayWords">Display clock's words</span></li>
+	  	<li><input id="inContext" type="checkbox" checked="checked"/>&nbsp;&nbsp;<span id="OptionsInContext">In Context</span></li>
+	  	<li><input id="fiveMinuteIncrements" type="checkbox" checked="checked"/>&nbsp;&nbsp;<span id="OptionsFiveMinIncrements">Five minute inc</span></li>
+  	</ul>
+  </td>
+  <td align="left" valign="top">
+	<ul class="options" id="numberLimits">
+		<li><b><span id="RangeHeader">Number Ranges</span></b></li>
+		<li><span id="Hours">hour</span> - 
+			<span id="RangeMinHour">Minimum</span>:&nbsp;&nbsp;<input id="hourMin" type="text" maxlength="2" size="2" class="text" onchange="setLimit(this.id)"/>&nbsp;&nbsp;
+			<span id="RangeMaxHour">Maximum</span>:&nbsp;&nbsp;<input id="hourMax" type="text" maxlength="2" size="2" class="text" onchange="setLimit(this.id)"/>
+		</li>
+		<li><span id="Minutes">minutes</span> -
+			<span id="RangeMinMinute">Minimum</span>:&nbsp;&nbsp;<input id="minuteMin" type="text" size="2" maxlength="2" class="text" onchange="setLimit(this.id)"/>&nbsp;&nbsp;
+			<span id="RangeMaxMinute">Maximum</span>:&nbsp;&nbsp;<input id="minuteMax" type="text" size="2" maxlength="2" class="text" onchange="setLimit(this.id)"/>
+		</li>
+	</ul>
+  </td>  
+  <td >
+	&nbsp;&nbsp;
+  </td>   
+  </tr>
+  </table>
+  
+  <table border="0">
+  <tr>
+  <td align="center" valign="bottom">
+	<input id="newValueButton" type="button" class="button blue" value="New Time" onclick="generateNew()"/>
+	<input id="repeatButton" type="button" class="button white invisible" value="Repeat Amount" onclick="playTime(true)"/>
+  </td>
+  <td align="center" valign="bottom">
+
+
+  </td>
+  <td align="center" valign="bottom">
+	&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  </td>
+  <td align="center" valign="bottom">
+	<div id="word-response-container" class="hidden"><div id="responseWords" class="text"></div></div>
+  </td>  
+  </tr>
+  </table>
+  
+  <div class="relative">
+  	  <div id="visualClock" class="invisible"></div>
+	  <div id="keypadContainer" class="invisible"></div>
+	  <div id="guessResult"><span class="text invisible" id="timeGuessed">&nbsp;<span id="guessedField"></span></span><br/><br/>
+	  <input id="checkAnswerButton" class="button blue invisible" type="button" value="Done...check my total" onclick="checkTimeSet()"/>
+	  </div>
+  	  <div id="score" class="text"></div>
+  	  <div id="footer" class="text">
+  	  	<div class="relative">
+  	  		<a id="otherToolsLink" class="text footerLink localeLink" href="index.html"></a>
+  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+			<a id="suggestionLink" class="text footerLink" href="mailto:suggestions@learnmynumbers.com?subject=Suggestion for Learn My Numbers"></a>
+  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+  	  		&copy; Summit Hill Software, Inc
+  	  	</div>
+  	  </div>
+  </div>
+  <!--  <br/><input type="button" value="Test Sound" onclick="testSound()"/> -->
+
+</body>
+</html>

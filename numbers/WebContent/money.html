@@ -1,0 +1,541 @@
+<!-- Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA  -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<!-- saved from url=(0014)about:internet -->
+<head>
+    <title>Learn My Numbers - Money</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <link href="css/base.css" rel="stylesheet" type="text/css"/> 
+    <link href="css/money.css" rel="stylesheet" type="text/css"/> 
+    <link href="css/jquery-ui-1.8.13.custom.css" rel="stylesheet" type="text/css"/> 
+	<script type="text/javascript" src="js/jquery-1.5.1.min.js" ></script>
+	<script type="text/javascript" src="js/jquery-ui-1.8.13.custom.min.js" ></script>
+	<script type="text/javascript" src="soundmanager2/script/soundmanager2.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+	<script type="text/javascript" src="js/SoundPlayer.js"></script>
+	<script type="text/javascript" src="js/Cashier.js"></script>	
+	<script type="text/javascript" src="js/KeyPad.js"></script>	
+	<script type="text/javascript" src="js/ScoreKeeper.js"></script>	
+	<script type="text/javascript" src="js/GoogleAnalytics.js"></script>
+
+	<script type="text/javascript">
+		DEFAULT_LANG = "en";
+		MAX_NUMBER_OF_WHOLE_DIGITS = 2;
+		NUMBER_OF_FRACTIONAL_DIGITS = 2;
+		LocaleProperties = {};
+		moneyDecimalChar = undefined;
+		moneyValidationRegex = undefined;  
+		lastDroppedId = 0;
+		speller = {};
+		soundPlayer = undefined;
+		cashier = undefined;
+		scoreKeeper = undefined;
+		
+		function setPageProperties() {
+			var locales = {
+				'fr-fr':{language:'french', soundsFolder:'fr', currency:'euro', cashierConstructor: FranceCashier, speller:'france', decimalChar: ','}, 
+				'en-us':{language:'english', soundsFolder:'us', currency:'dollar', cashierConstructor: AmericanCashier, speller:'us', decimalChar: '.'}
+			};
+			setLocale(locales, 'en-us');
+			cashier = new LocaleProperties.cashierConstructor();
+			soundPlayer = new SoundPlayer(LocaleProperties.soundsFolder);
+		}
+
+		function switchInstructionsLang(languageCode) {
+			persistInstructionsLang(languageCode);
+			loadLanguageInstructions();
+		}
+		
+		function loadLanguageInstructions() {
+			var instructionLang = getPersistedInstructionsLang();
+			if (instructionLang) {
+				  // load via on-demand javascript so we don't have to load all languages initially
+				loadScript('text-money-' + instructionLang);
+			}
+		}
+		
+		function generateNewTotalDue() {
+			sendTrackingEvent('Money', 'NewSound');
+			temporarilyDisableNewButton();
+			makePaymentElementsVisible(false);
+			updateTotalPaidView(false);
+			clearCounterTop();
+			cashier.generateNewTotalDue();
+			playTotalDue();
+			scoreKeeper.testStarted();
+		}
+		
+		function temporarilyDisableNewButton() {
+			// disable the button for x milliseconds to deal with impatient user
+			$('#newAmountButton').attr('disabled', 'disabled');
+			setTimeout(function() {$('#newAmountButton').attr('disabled', '');}, 2000);
+		}
+
+		function repeat() {
+			sendTrackingEvent('Money', 'Repeat');
+			playTotalDue(true) ;
+		}
+		
+		function playTotalDue(isRepeat) {
+			var sounds = isInContext() ? cashier.getTotalDueInContextSounds() : cashier.getTotalDueSounds();
+			displayWords(sounds);
+			playSounds(sounds, function() {
+				makePaymentElementsVisible(true);
+				updatePaidViews(); 
+				scoreKeeper.refreshView();
+			}, function() {
+				if (!isRepeat) {
+					preloadNextAmountDue();
+				}
+			});
+		}
+		
+		function preloadNextAmountDue() {
+			cashier.preloadTotalDue();
+			soundPlayer.loadSounds(cashier.getPreloadedTotalDueInContextSounds());
+		}
+		
+		function makePaymentElementsVisible(shouldBeVisible) {
+			invisible('repeatButton', !shouldBeVisible);
+			invisible('countertop', !shouldBeVisible);
+			invisible('keypadContainer', !shouldBeVisible);
+			invisible('visualCashRegister', !shouldBeVisible);
+		}
+		
+		function updatePaidViews() {
+			var isAmountEmpty = getTotalPaidFieldValue() == '';
+			$('#clearCounterButton').toggleClass('invisible', isAmountEmpty);
+			updateCheckTotalButton(isAmountEmpty);
+			updateTotalPaidView();
+		}
+		
+		function updateCheckTotalButton(isAmountEmpty) {
+			$('#checkTotalButton').toggleClass('invisible', isAmountEmpty);
+		}
+		
+		function updateTotalPaidView(shouldForceShow) {
+			var shouldShow = shouldForceShow;
+			if (shouldShow == null) { 
+				// first: casher must have asked for money
+				var shouldShow = cashier.getTotalDueInContextSounds().length != 0;
+				// next: show if using keypad OR user has asked to see running total
+				if (shouldShow) {
+					var isVisualRegister = $('#showVisualCheckBox').is(':checked');
+					var isDisplayTotal = $('#displayTotalCheckBox').is(':checked');
+					shouldShow = (!isVisualRegister) || isDisplayTotal;
+				}	
+			}
+			$('#totalPaid').toggleClass('invisible', !shouldShow);
+		}
+		
+		function displayWords(arrayOfSounds) {
+			$('#responseWords').html(speller.getWrittenPhrase(arrayOfSounds));
+			showCashierWords();
+		}
+
+		function checkTotalPaid() {
+			var totalPaid = validateTotalPaid();
+			if (totalPaid) {
+				var cashierReponseSounds = cashier.getTotalPaidResponseSounds(totalPaid);
+				displayWords(cashierReponseSounds);
+				playSounds(cashierReponseSounds);
+				if (cashier.isTotalPaidCorrect(totalPaid)) {
+					flashPaidGuessSuccess(true);
+					scoreKeeper.testCompleted();
+					scoreKeeper.refreshView();
+					sendTrackingEvent('Money', 'CheckAnswer', 'Correct');
+				} else {
+					flashPaidGuessSuccess(false);
+					sendTrackingEvent('Money', 'CheckAnswer', 'Incorrect');
+				}
+			} else {
+				sendTrackingEvent('Money', 'CheckAnswer', 'InvalidValue');
+			}
+		}
+		
+		function flashPaidGuessSuccess(isCorrect) {
+			flashGuessIndicator($('#totalPaidField'), isCorrect, false);
+			flashGuessIndicator($('#responseWords'), isCorrect, false);
+			flashGuessIndicator($('#checkTotalButton'), isCorrect, true);
+			flashGuessIndicator($('#PayCashierText'), isCorrect, false);
+		}
+		
+		function dropMoneyOnCounter($money, $countertop) {
+			var $moneyClone = $money.clone();
+			$moneyClone[0].moneyId = $moneyClone.attr('id');
+			$moneyClone.attr('id', 'dropped' + lastDroppedId++);
+			$countertop.append($moneyClone);
+			makeDraggable($moneyClone);
+			$moneyClone.bind('click', function() {
+				putMoneyBackInWallet($moneyClone);
+			});	
+			updateCounterTop();
+		}
+		
+		function addMoneyToCounter(moneyDomElement) {
+			var $counterTop = $('#countertop');
+			dropMoneyOnCounter($(moneyDomElement), $counterTop);
+			$counterTop[0].scrollTop = $counterTop[0].scrollHeight;  // scroll to end in case of overflow
+		}
+
+		function putMoneyBackInWallet($money) {
+			$money.remove();
+			updateCounterTop();
+			// this resolves a problem with I.E. (zombine draggable not cleaned up when dropped)
+			$('.ui-draggable-dragging').remove();
+		}
+
+		function clearCounterTop() {
+			$('#countertop .money').remove();
+			updateCounterTop();
+		}
+		
+		function updateCounterTop() {
+			updateTotalDroppedOnCounter();
+			updateDragInstructions();
+		}
+		
+		function initCurrency() {
+			if (LocaleProperties.currency == 'euro') {
+				var html = createEurosHtml();
+				var pageImage = 'images/tous-pieces.gif';
+			} else {
+				var html = createDollarsHtml();
+				var pageImage = 'images/american-money.jpg';
+			}
+			$('#excerciseImage').attr('src', pageImage);
+			$('#wallet').append(html);
+		}
+		
+		function initDragAndDrop() {
+			makeDraggable($('.money'));
+			$('#countertop').droppable({
+				accept: '#wallet .money',
+				drop: function(event, ui) {
+					dropMoneyOnCounter(ui.draggable, $(this));
+				}
+			});
+			$('#wallet').droppable({
+				accept: '#countertop .money',
+				drop: function(event, ui) {
+					putMoneyBackInWallet(ui.draggable);
+				}
+			});		
+		}
+
+		function initBindings() {
+			$('.money').bind('click', function() {
+				addMoneyToCounter(this);
+			});	
+		}
+		
+		function makeDraggable($moneys) {
+			var options = { helper: 'clone', appendTo: 'body'}
+			$moneys.draggable(options);
+		}
+		
+		function updateTotalDroppedOnCounter() {
+			var moneyIds = [];
+			getMoneyOnCounter().each(function() {
+				moneyIds.push(this.moneyId);
+			});
+			var moneyArray = translateMoneyIds(moneyIds);
+			var total = cashier.sum(moneyArray);
+			if (total.equalsZero()) {
+				setTotalPaidFieldValue('');
+			} else {
+				setTotalPaidFieldValue(total.format(moneyDecimalChar));
+				sayTotalPaid();
+			}
+			updatePaidViews();
+		}
+
+		function translateMoneyIds(arrayOfMoneyIds) {
+			// given a list of dom IDs, return a list of Money
+			var moneyList = [];
+			jQuery.each(arrayOfMoneyIds, function() {
+				// expecting a string in the form "type-amount"
+				var parts = this.split('-');
+				var amount = parseInt(parts[1]);
+				moneyList.push((parts[0]) == 'centime' ?
+					new Money(0, amount) : new Money(amount, 0));
+			});
+			return moneyList;
+		}
+		
+		function updateDragInstructions() {
+			$('#dragDropInstructionsContainer').toggleClass(
+				'hidden', 
+				getMoneyOnCounter().length > 0);
+		}
+		
+		function getMoneyOnCounter() {
+			return $('#countertop .money').not('.ui-draggable-dragging');
+		}
+
+		function refreshLimits() {
+			$('#numberLimits input').each(function() {refreshLimit(this.id)});
+		} 
+		
+		function refreshLimit(fieldName) {
+			$('#' + fieldName).val(cashier.getLimits()[fieldName]);
+		} 
+		
+		function validateLimit(fieldName) {
+			var value = getFieldValue(fieldName);
+			if (value >= 0 && value < 100) {
+				// if setting min but max is < min then adjust it (vice versa for max)
+				var partnerFieldSuffix = fieldName.indexOf('Min') > -1 ? 'Max' : 'Min';
+				var typeName = fieldName.indexOf('whole') > -1 ? 'whole' : 'fractional';
+				var partnerFieldName = typeName + partnerFieldSuffix;
+				var partnerValue = getFieldValue(partnerFieldName);
+				if (partnerFieldSuffix == 'Max' && partnerValue < value ||
+					partnerFieldSuffix == 'Min' && partnerValue > value) {
+						cashier.getLimits()[partnerFieldName] = value;
+				}
+				return value;
+			} else {
+				displayError(InstructionsText['InvalidMinMax']);
+				return -1;
+			}
+		} 
+		
+		function getFieldValue(fieldName) {
+			return parseInt($('#' + fieldName).val(), 10);
+		}
+		
+		function validateTotalPaid() {
+			var paid = getTotalPaidFieldValue();
+			if (paid == paid.match(moneyValidationRegex)) {
+				paid = cashier.parseMoneyString(paid, moneyDecimalChar);
+				setTotalPaidFieldValue(paid.format(moneyDecimalChar));
+				return paid;
+			} 
+			return null;
+		} 
+		
+		function getTotalPaidFieldValue() {
+			return jQuery.trim($('#totalPaidField').html());	
+		}
+		
+		function setTotalPaidFieldValue(stringValue) {
+			$('#totalPaidField').html(stringValue);	
+		}
+		
+		function setLimit(fieldName) {
+			var value = validateLimit(fieldName);
+			if (value > -1) {
+				cashier.getLimits()[fieldName] = value;
+				cashier.clearPreloadTotalDue();
+			}
+			refreshLimits();
+		} 
+		
+		function showVisualCashRegister(shouldShow) {
+			// display/hide the money drag/drop view
+			$('#visualCashRegister').toggleClass('hidden', !shouldShow);
+			// change the "display running total" checkbox to default and
+			// also hide/show the running total accordingly
+			$('#displayTotal').toggleClass('hidden', !shouldShow).attr('checked', false);
+			$('#sayTotal').toggleClass('hidden', !shouldShow).attr('checked', false);
+			// hide the keypad if we are in visual mode
+			$('#keypadContainer').toggleClass('hidden', shouldShow);
+			// show the score keeper 
+			scoreKeeper.draw($('#scoreKeeper'));
+			loadLanguageInstructions();
+			clearCounterTop();
+			updatePaidViews();
+		}
+		
+		function showCashierWords() {
+			var shouldShow = $('#showCashierWordsCheckBox').is(':checked');
+			shouldShow = shouldShow && !isEmpty($('#responseWords').html());
+			$('#word-response-container').toggleClass('hidden', !shouldShow);
+		}
+		
+		function sayTotalPaid() {
+			if ($('#sayRunningTotalCheckBox').is(':checked')) {
+				var amount = cashier.parseMoneyString(getTotalPaidFieldValue(), moneyDecimalChar);
+				if (!amount.equals(new Money(0,0))) {
+					var amountSounds = cashier.getPaidAmountSounds(amount);
+					displayWords(amountSounds);
+					playSounds(amountSounds);
+				}
+			}
+		}
+		
+		function drawKeyPad() {
+			new KeyPad($('#totalPaidField')).render($('#keypadContainer'), moneyDecimalChar, NUMBER_OF_FRACTIONAL_DIGITS, MAX_NUMBER_OF_WHOLE_DIGITS,
+					function(value) {
+						updateCheckTotalButton(value ==  null || value == '');
+					});
+		}
+		
+		function isInContext() {
+			return $('#inContext').is(':checked');
+		}
+		
+		function createEurosHtml() {
+			var html = [];
+			html[html.length] = createMoneyImageHtml("centime-1", "centime-small", "images/centime-1.gif");
+			html[html.length] = createMoneyImageHtml("centime-2", "centime-small", "images/centime-2.gif");
+			html[html.length] = createMoneyImageHtml("centime-5", "centime-small", "images/centime-5.gif");
+			html[html.length] = createMoneyImageHtml("centime-10", "centime-large", "images/centime-10.gif");
+			html[html.length] = createMoneyImageHtml("centime-20", "centime-large", "images/centime-20.gif");
+			html[html.length] = createMoneyImageHtml("centime-50", "centime-large", "images/centime-50.gif");
+			html[html.length] = createMoneyImageHtml("euro-1", "euro-piece", "images/euro-1.gif");
+			html[html.length] = createMoneyImageHtml("euro-2", "euro-piece", "images/euro-2.gif");
+			html[html.length] = "<br/>";
+			html[html.length] = createMoneyImageHtml("euro-5", "", "images/euro-5.jpg");
+			html[html.length] = createMoneyImageHtml("euro-10", "", "images/euro-10.jpg");
+			html[html.length] = createMoneyImageHtml("euro-20", "", "images/euro-20.jpg");
+			html[html.length] = createMoneyImageHtml("euro-50", "", "images/euro-50.jpg");
+			return html.join('');
+		}
+		
+		function createDollarsHtml() {
+			var html = [];
+			html[html.length] = createMoneyImageHtml("centime-1", "", "images/cent-1.gif", "one cent");
+			html[html.length] = createMoneyImageHtml("centime-5", "", "images/cent-5.gif", "five cents");
+			html[html.length] = createMoneyImageHtml("centime-10", "", "images/cent-10.gif", "ten cents");
+			html[html.length] = createMoneyImageHtml("centime-25", "", "images/cent-25.gif", "twenty five cents");
+			html[html.length] = "<br/>";
+			html[html.length] = createMoneyImageHtml("euro-1", "bill", "images/dollar-1.jpg", "one dollar");
+			html[html.length] = createMoneyImageHtml("euro-5", "bill", "images/dollar-5.jpg", "five dollars");
+			html[html.length] = createMoneyImageHtml("euro-10", "bill", "images/dollar-10.jpg", "ten dollars");
+			html[html.length] = createMoneyImageHtml("euro-20", "bill", "images/dollar-20.jpg", "twenty dollars");
+			html[html.length] = createMoneyImageHtml("euro-50", "bill", "images/dollar-50.jpg", "fifty dollars");
+			return html.join('');
+		}
+		
+		function createMoneyImageHtml(domId, imageClass, imageUrl, title) {
+			return '<span class="money" id="' + domId + '"><img class="' + imageClass + '"' + (title ? ' title="' + title + '"' : '') 
+				+ ' src="' + imageUrl + '"/></span>';	
+		}
+		
+		function initOptions() {
+			showVisualCashRegister(true);
+			refreshLimits();
+			drawKeyPad();
+		} 
+		
+		function initScoreKeeper() {
+			scoreKeeper = new ScoreKeeper();
+		}
+		
+		function initMoneyDecimalCharacter() {
+			moneyDecimalChar = LocaleProperties.decimalChar;
+			moneyValidationRegex = new RegExp('\\d*\\' + moneyDecimalChar + '?\\d*');  
+		}
+
+		$(function() {
+			setPageProperties();
+			initMoneyDecimalCharacter();
+			initScoreKeeper();
+			initCurrency();
+			initDragAndDrop();
+			initOptions();
+			initBindings();
+			setInitialInstructionsLang("en");
+			warnIosUsers();
+			setSpeller(LocaleProperties.speller);
+			initLocaleLinks();
+			setTimeout(preloadNextAmountDue, 1000); // time to let sound manager start
+		});
+
+		function testSound() {
+			//playSounds(['feuros']);
+			playSounds(['ok that will be', '15 dollars', 'dollars', 'twenty two', 'cents please']);
+		} 
+	</script>
+	
+</head>
+<body >
+  <table border="0" class="text">
+  <tr>
+  <td  align="left">
+    <input type="image" id="excerciseImage" src="images/tous-pieces.gif" onclick="location.href=location.href"/>
+  </td>
+  <td class="title" align="center" valign="middle">
+  	<span id="ExcerciseName">At the store</span><br/><span id="LanguageName" class="text">Language</span>
+  </td>
+  <td align="left" valign="top">
+  	<ul class="options">
+  		<li><b><span id="OptionsHeading">Options</span></b>
+  		  	&nbsp;&nbsp;<input type="image" id="english-flag" class="flag" src="images/american-flag.jpeg" onclick="switchInstructionsLang('en')"/>
+  		  	&nbsp;&nbsp;<input type="image" id="french-flag" class="flag" src="images/france-flag.jpeg" onclick="switchInstructionsLang('fr')"/>
+  		</li>
+  		<li><input type="checkbox" checked="checked" id="showVisualCheckBox" onclick="showVisualCashRegister(this.checked)"/>&nbsp;&nbsp;<span id="OptionsVisual">Visual (drag and drop money)</span></li>
+  		<li id="displayTotal"><input type="checkbox" id="displayTotalCheckBox" checked="checked" onclick="updatePaidViews()"/>&nbsp;&nbsp;<span id="OptionsDisplayRunning">Display Running Total</span></li>
+  		<li id="sayTotal"><input type="checkbox" id="sayRunningTotalCheckBox"/>&nbsp;&nbsp;<span id="OptionsSayRunning">Say (audio) Running Total</span></li>
+  		<li><input id="inContext" type="checkbox" checked="checked"/>&nbsp;&nbsp;<span id="OptionsInContext">In Context</span></li>
+  		<li><input id="showCashierWordsCheckBox" type="checkbox" checked="checked" onclick="showCashierWords()"/>&nbsp;&nbsp;<span id="OptionsDisplayWords">Display cashier's words</span></li>
+  	</ul>
+  </td>
+  <td align="left" valign="top">
+	<ul class="options" id="numberLimits">
+		<li><b><span id="RangeHeader">Number Ranges</span></b></li>
+		<li>Euros - 
+			<span id="RangeMinEuros">Minimum</span>:&nbsp;&nbsp;<input id="wholeMin" type="text" maxlength="2" size="2" class="text" onchange="setLimit(this.id)"/>&nbsp;&nbsp;
+			<span id="RangeMaxEuros">Maximum</span>:&nbsp;&nbsp;<input id="wholeMax" type="text" maxlength="2" size="2" class="text" onchange="setLimit(this.id)"/>
+		</li>
+		<li>Centimes -
+			<span id="RangeMinCentimes">Minimum</span>:&nbsp;&nbsp;<input id="fractionalMin" type="text" size="2" maxlength="2" class="text" onchange="setLimit(this.id)"/>&nbsp;&nbsp;
+			<span id="RangeMinCentimes">Maximum</span>:&nbsp;&nbsp;<input id="fractionalMax" type="text" size="2" maxlength="2" class="text" onchange="setLimit(this.id)"/>
+		</li>
+	</ul>
+  </td>  
+  <td >
+	&nbsp;&nbsp;
+  </td>   
+  </tr>
+  </table>
+  
+  <table border="0">
+  <tr>
+  <td align="center" valign="bottom">
+	<input id="newAmountButton" type="button" class="button blue" value="New Amount" onclick="generateNewTotalDue()"/>
+	<input id="repeatButton" type="button" class="button white invisible" value="Repeat Amount" onclick="repeat()"/>
+  </td>
+  <td align="center" valign="bottom">
+	&nbsp;&nbsp;<span class="text invisible" id="totalPaid"><span id="PayCashierText">Pay Cashier</span>:&nbsp;<span id="totalPaidField"></span></span>
+	<input id="checkTotalButton" class="button blue invisible" type="button" value="Done...check my total" onclick="checkTotalPaid()"/>
+  </td>
+  <td align="center" valign="bottom">
+	&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  </td>
+  <td align="center" valign="bottom">
+	<div id="word-response-container" class="hidden"><div id="responseWords" class="text"></div></div>
+  </td>  
+  </tr>
+  </table>
+
+	<div class="relative">
+		<div id="visualCashRegister" class="invisible">
+			<div id="wallet" class="money-container text">
+				<span id="WalletText"></span>&nbsp;&nbsp;<span id="WalletInstructionText" class="money-container-instructions"></span><br/>
+			</div>
+			<div id="countertop" class="money-container text invisible">
+				<div id="dragDropInstructionsContainer">
+					<span id="CountertopText"></span>&nbsp;&nbsp;<span id="CountertopInstructionText" class="money-container-instructions"></span><br />
+				</div>
+			</div>
+			<input type="button" id="clearCounterButton" value="Clear Counter" class="button blue invisible" onclick="clearCounterTop()" />
+		</div>
+		<div id="keypadContainer" class="invisible"></div>
+		<div id="scoreKeeper" class="text"></div>
+		<div id="footer" class="text">
+			<div class="relative">
+	  	  		<a id="otherToolsLink" class="text footerLink localeLink" href="index.html"></a>
+	  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+				<a id="suggestionLink" class="text footerLink" href="mailto:suggestions@learnmynumbers.com?subject=Suggestion for Learn My Numbers"></a>
+	  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+	  	  		&copy; Summit Hill Software, Inc
+			</div>
+		</div>
+	</div>
+    <!--  <br/><input type="button" value="Test Sound" onclick="testSound()"/> -->
+
+</body>
+</html>

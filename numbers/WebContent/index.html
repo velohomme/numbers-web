@@ -1,0 +1,144 @@
+<!-- Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA  -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<!-- saved from url=(0014)about:internet -->
+<head>
+    <title>Learn My Numbers</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <link href="css/base.css" rel="stylesheet" type="text/css"/> 
+    <link href="css/index.css" rel="stylesheet" type="text/css"/>     
+    <link href="css/jquery-ui-1.8.13.custom.css" rel="stylesheet" type="text/css"/> 
+	<script type="text/javascript" src="js/jquery-1.5.1.min.js" ></script>
+	<script type="text/javascript" src="js/jquery-ui-1.8.13.custom.min.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+
+	<script type="text/javascript">
+		LocaleProperties = {};
+		
+		function setPageProperties() {
+			var queryStringParam = 'locale';
+			var locales = {
+				'fr-fr':{
+					language:'french', 
+					images: {
+						localeImage: 'images/frenchflag123.jpg',
+						generalImage: 'images/frenchflag123.jpg', 
+						moneyImage: 'images/tous-pieces.gif', 
+						timeImage: 'images/clock.jpg'
+					}
+				},
+				'en-us':{
+					language: 'english', 
+					images: {
+						localeImage: 'images/americanflag123.jpg',
+						generalImage: 'images/americanflag123.jpg', 
+						moneyImage: 'images/american-money.jpg', 
+						timeImage: 'images/clock.jpg'
+					}
+				}
+			};
+			setLocale(locales, 'en-us');
+		}
+
+		function switchInstructionsLang(languageCode) {
+			persistInstructionsLang(languageCode);
+			// load via on-demand javascript so we don't have to load all languages initially
+			loadScript('text-intro-' + languageCode);
+		}
+		
+		function initLocaleView() {
+			if (LocaleProperties.images) {
+				for (id in LocaleProperties.images) {
+					$('#'+id).attr('src', LocaleProperties.images[id]);
+				}
+			}
+			$('.exerciseLink').each(function() {
+				var $link = $(this);
+				var href = $link.attr('href');
+				if (href.match(/.*\?.*/) == null) {
+					$link.attr('href', href + '?locale=' + LocaleProperties.locale);
+				}
+			});
+		}
+		
+		function openExcercise($linkElement) {
+			location.href=location.href = $linkElement.attr('href');
+		}
+		
+		$(function() {
+			setPageProperties();
+			initLocaleView();
+			setInitialInstructionsLang("en");
+			warnIosUsers();
+		});
+	</script>
+	
+</head>
+<body >
+  <table border="0" class="text">
+  <tr>
+  <td  align="left">
+    <input type="image" id="localeImage" src="" onclick="location.href=location.href"/>
+  </td>
+  <td class="title" align="center" valign="middle">
+  	<span id="ExcerciseName">Excercise Name</span><br/>
+  </td>
+  <td align="left" valign="top">
+  	<ul class="options">
+  		<li><b><span id="OptionsHeading">Options</span></b>
+  		  	&nbsp;&nbsp;<input type="image" id="english-flag" class="flag" src="images/american-flag.jpeg" onclick="switchInstructionsLang('en')"/>
+  		  	&nbsp;&nbsp;<input type="image" id="french-flag" class="flag" src="images/france-flag.jpeg" onclick="switchInstructionsLang('fr')"/>
+  		</li>
+  	</ul>
+  </td>
+  </tr>
+  </table>
+  
+   <table border="0">
+     <tr>
+     	<td>
+		  <table id="applications"border="0">
+		      <tr>
+		      	  <td class="separatorColumnNarrow"/>
+		  	  	  <td colspan="2"><div class="text overview"><span id="OverviewText">Use these </span><span id="LanguageName">LANGUAGE</span>.<br/><br/></div></td>
+		  	  	  
+			  </tr>
+		  	  <tr>
+		  	  	  <td class="separatorColumnNarrow"/>
+				  <td><input id="generalImage" type="image" class="excerciseImageSmall" src="images/americanflag123.jpg" onclick="openExcercise($('#SimpleExcerciseLink'))" /></td>
+				  <td class="title"><a class="exerciseLink text" id="SimpleExcerciseLink" href="general.html">Simple Numbers</a></td>
+			  </tr>
+		  	  <tr>
+		  	  	  <td class="separatorColumnNarrow"/>
+				  <td><input id="moneyImage" type="image" class="excerciseImageSmall" src="images/american-money.jpg" onclick="openExcercise($('#MoneyExcerciseLink'))"/></td>
+				  <td class="title"><a class="exerciseLink text" id="MoneyExcerciseLink" href="money.html">Money</a></td>
+			  </tr>
+		  	  <tr>
+		  	  	  <td class="separatorColumnNarrow"/>
+				  <td><input id="timeImage" type="image" class="excerciseImageSmall" src="images/clock.jpg" onclick="openExcercise($('#ClockExcerciseLink'))"/></td>
+				  <td class="title"><a class="exerciseLink text" id="ClockExcerciseLink" href="time.html">Time</a></td>
+			  </tr>	  	  
+		  </table>
+		</td>
+	    <td class="separatorColumnNarrow"/>
+		<td valign="top" class="text">
+			<span id="otherLanguagesTitle">Other Languages</span>
+			<ul>
+				<li id="OtherLang1"></li>
+			</ul>
+		</td>
+  	  </tr>	  	  
+  </table>
+  
+  <div><br/><br/></div>
+
+  <table border="0" class="text footer"><tr>
+ 	<td>Copyright (C) 2011 Summit Hill Software, Inc</td>
+ 	<td class="separatorColumnMedium"/>
+  	<td><a id="suggestionLink" class="text" href="mailto:suggestions@learnmynumbers.com?subject=Suggestion for Learn My Numbers"></a></td>    
+  </tr></table>
+  <!--  <br/><input type="button" value="Test Sound" onclick="testSound()"/> -->
+
+</body>
+</html>

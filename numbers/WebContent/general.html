@@ -1,0 +1,332 @@
+<!-- Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA  -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<!-- saved from url=(0014)about:internet -->
+<head>
+    <title>Learn My Numbers - General</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <link href="css/base.css" rel="stylesheet" type="text/css"/>
+    <link href="css/general.css" rel="stylesheet" type="text/css"/> 
+    <link href="css/jquery-ui-1.8.13.custom.css" rel="stylesheet" type="text/css"/> 
+	<script type="text/javascript" src="js/jquery-1.5.1.min.js" ></script>
+	<script type="text/javascript" src="js/jquery-ui-1.8.13.custom.min.js"></script>
+	<script type="text/javascript" src="soundmanager2/script/soundmanager2.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+	<script type="text/javascript" src="js/SoundPlayer.js"></script>
+	<script type="text/javascript" src="js/SimpleNumberGenerator.js"></script>	
+	<script type="text/javascript" src="js/KeyPad.js"></script>	
+	<script type="text/javascript" src="js/ScoreKeeper.js"></script>
+	<script type="text/javascript" src="js/GoogleAnalytics.js"></script>	
+
+	<script type="text/javascript">
+		LocaleProperties = {};
+		speller = {};
+		soundPlayer = undefined;
+		numberGenerator = undefined;
+		scoreKeeper = undefined;
+		
+		function setPageProperties() {
+			var locales = {
+				'fr-fr':{language:'french', soundsFolder:'fr', speller:'france', generatorConstructor: FrenchNumberGenerator, exImage: 'images/frenchflag123.jpg', min: 1, max: 1000}, 
+				'en-us':{language: 'english', soundsFolder:'us', speller:'us', generatorConstructor: AmericanNumberGenerator, exImage: 'images/americanflag123.jpg', min: 0, max: 1000}
+			};
+			setLocale(locales, 'en-us');
+			numberGenerator = new LocaleProperties.generatorConstructor();
+			numberGenerator.getLimits().numberMax = LocaleProperties.max;
+			numberGenerator.getLimits().numberMin = LocaleProperties.min;
+			soundPlayer = new SoundPlayer(LocaleProperties.soundsFolder);
+		}
+
+		function generateNew() {
+			sendTrackingEvent('Simple', 'NewSound');
+			temporarilyDisableNewButton();
+			makeGuessedElementsVisibile(false);
+			setGuessFieldValue('');
+			updateGuessedView(false);
+			numberGenerator.generateNewNumber();
+			playNumber();
+			scoreKeeper.testStarted();
+		}
+		
+		
+		
+		function updateGuessedView(shouldForceShow) {
+			var shouldShow = shouldForceShow;
+			if (shouldShow == null) { 
+				// first: number must have been generatred
+				var shouldShow = numberGenerator.getNumberInContextSounds().length != 0;
+			}
+			$('#guess').toggleClass('invisible', !shouldShow);
+		}
+
+		function temporarilyDisableNewButton() {
+			// disable the button for x milliseconds to deal with impatient user
+			$('#newValueButton').attr('disabled', 'disabled');
+			setTimeout(enableNewButton, 3000);
+		}
+		
+		function enableNewButton() {
+			$('#newValueButton').attr('disabled', '');
+		}
+		
+		function playNumber(isRepeat) {
+			var sounds = numberGenerator.getNumberInContextSounds();
+			displayWords(sounds);
+			playSounds(sounds, function() {
+				makeGuessedElementsVisibile(true);
+				updateGuessedViews(); 
+				scoreKeeper.refreshView();
+			}, function() {
+				enableNewButton();
+				if (!isRepeat) {
+					preloadNextNumber();
+				}
+			});
+		}
+		
+		
+		function preloadNextNumber() {
+			numberGenerator.preloadNextNumber();
+			soundPlayer.loadSounds(numberGenerator.getPreloadNumberInContextSounds());
+		}
+		
+		function makeGuessedElementsVisibile(shouldBeVisible) {
+			invisible('repeatButton', !shouldBeVisible);
+			invisible('keypadContainer', !shouldBeVisible);
+		}
+		
+		function updateGuessedViews() {
+			var isNumberEmpty = getGuessedFieldValue() == '';
+			updateCheckGuessButton(isNumberEmpty);
+			updateGuessedView();
+		}
+		
+		function updateCheckGuessButton(isNumberEmpty) {
+			$('#checkAnswerButton').toggleClass('invisible', isNumberEmpty);
+		}
+		
+		function displayWords(arrayOfSounds) {
+			var wordDisplayHtml = speller.getWrittenPhrase(arrayOfSounds);
+			$('#responseWords').html(wordDisplayHtml);
+			showWords();
+		}
+
+		function checkNumberSet() {
+			var guess = validateGuess();
+			if (guess) {
+				var responseSounds = numberGenerator.getGuessResponseSounds(guess);
+				displayWords(responseSounds);
+				playSounds(responseSounds);
+				if (numberGenerator.isNumberGuessedCorrect(guess)) {
+					flashGuessSuccess(true);
+					scoreKeeper.testCompleted();
+					scoreKeeper.refreshView();
+					sendTrackingEvent('Simple', 'CheckAnswer', 'Correct');
+				} else {
+					flashGuessSuccess(false);
+					sendTrackingEvent('Simple', 'CheckAnswer', 'Incorrect');
+				}
+			}
+		}
+		
+		function flashGuessSuccess(isCorrect) {
+			flashGuessIndicator($('#guessedField'), isCorrect, false);
+			flashGuessIndicator($('#responseWords'), isCorrect, false);
+			flashGuessIndicator($('#checkAnswerButton'), isCorrect, true);
+		}
+		
+		function initBindings() {
+
+		}
+		
+		function initLocaleLinks() {
+			$('.localeLink').each(function() {
+				var $link = $(this);
+				var href = $link.attr('href');
+				if (href.match(/.*\?.*/) == null) {
+					$link.attr('href', href + '?locale=' + LocaleProperties.locale);
+				}
+			});
+		}
+
+		function refreshLimits() {
+			$('#numberLimits input').each(function() {refreshLimit(this.id)});
+		} 
+		
+		function refreshLimit(fieldName) {
+			$('#' + fieldName).val(numberGenerator.getLimits()[fieldName]);
+		} 
+		
+		function validateLimit(fieldName) {
+			var value = getFieldValue(fieldName);
+			if (value >= LocaleProperties.min && value <= LocaleProperties.max) {
+				// if setting min but max is < min then adjust it (vice versa for max)
+				var partnerFieldSuffix = fieldName.indexOf('Min') > -1 ? 'Max' : 'Min';
+				var partnerFieldName = 'number' + partnerFieldSuffix;
+				var partnerValue = getFieldValue(partnerFieldName);
+				if (partnerFieldSuffix == 'Max' && partnerValue < value ||
+					partnerFieldSuffix == 'Min' && partnerValue > value) {
+						numberGenerator.getLimits()[partnerFieldName] = value;
+				}
+				return value;
+			} else {
+				displayError(InstructionsText['InvalidMinMax']);
+				return -1;
+			}
+		} 
+		
+		function getFieldValue(fieldName) {
+			return parseInt($('#' + fieldName).val(), 10);
+		}
+		
+		function validateGuess() {
+			var guessAsString = getGuessedFieldValue();
+			var guess = parseInt(guessAsString,10);
+			setGuessFieldValue(guess+'');
+			return guess;
+		} 
+		
+		function getGuessedFieldValue() {
+			return jQuery.trim($('#guessedField').html());	
+		}
+		
+		function setGuessFieldValue(stringValue) {
+			$('#guessedField').html(stringValue);	
+		}
+		
+		function setLimit(fieldName) {
+			var value = validateLimit(fieldName);
+			if (value > -1) {
+				numberGenerator.getLimits()[fieldName] = value;
+				numberGenerator.clearPreloadNumber();
+			}
+			refreshLimits();
+		} 
+		
+		function showWords() {
+			var shouldShow = $('#showWords').is(':checked');
+			shouldShow = shouldShow && !isEmpty($('#responseWords').html());
+			$('#word-response-container').toggleClass('hidden', !shouldShow);
+		}
+		
+		function drawKeyPad() {
+			new KeyPad($('#guessedField')).render($('#keypadContainer'), null, 0, 4,
+					function(value) {
+						updateCheckGuessButton(value ==  null || value == '');
+					});
+		}
+		
+		function switchInstructionsLang(languageCode) {
+			persistInstructionsLang(languageCode);
+			// load via on-demand javascript so we don't have to load all languages initially
+			loadScript('text-general-' + languageCode);
+		}
+		
+		function initOptions() {
+			refreshLimits();
+		} 
+		
+		function initScoreKeeper() {
+			scoreKeeper = new ScoreKeeper();
+			scoreKeeper.draw($('#score'));
+		}
+		
+		function initLocaleView() {
+			$('#excerciseImage').attr('src', LocaleProperties.exImage);
+		}
+		
+		$(function() {
+			setPageProperties();
+			initLocaleView();
+			initScoreKeeper();
+			initOptions();
+			initBindings();
+			drawKeyPad();
+			setInitialInstructionsLang("en");
+			warnIosUsers();
+			setSpeller(LocaleProperties.speller);
+			initLocaleLinks();
+			setTimeout(preloadNextNumber, 1000); // time to let sound manager start
+		});
+
+		function testSound() {
+			//playSounds(['feuros']);
+			playSounds(['59']);
+		} 
+	</script>
+	
+</head>
+<body >
+  <table border="0" class="text">
+  <tr>
+  <td  align="left">
+    <input type="image" id="excerciseImage" src="images/clock.jpg" onclick="location.href=location.href"/>
+  </td>
+  <td class="title" align="center" valign="middle">
+  	<span id="ExcerciseName">Excercise Name</span><br/><span id="LanguageName" class="text">Language</span>
+  </td>
+  <td align="left" valign="top">
+  	<ul class="options">
+  		<li><b><span id="OptionsHeading">Options</span></b>
+  		  	&nbsp;&nbsp;<input type="image" id="english-flag" class="flag" src="images/american-flag.jpeg" onclick="switchInstructionsLang('en')"/>
+  		  	&nbsp;&nbsp;<input type="image" id="french-flag" class="flag" src="images/france-flag.jpeg" onclick="switchInstructionsLang('fr')"/>
+  		</li>
+  		<li><input id="showWords" type="checkbox" checked="checked" onclick="showWords()"/>&nbsp;&nbsp;<span id="OptionsDisplayWords">Display words</span></li>
+  	</ul>
+  </td>
+  <td align="left" valign="top">
+	<ul class="options" id="numberLimits">
+		<li><b><span id="RangeHeader">Number Ranges</span></b></li>
+		<li> 
+			<span id="RangeMin">Minimum</span>:&nbsp;&nbsp;<input id="numberMin" type="text" maxlength="4" size="4" class="text" onchange="setLimit(this.id)"/>&nbsp;&nbsp;
+			<span id="RangeMax">Maximum</span>:&nbsp;&nbsp;<input id="numberMax" type="text" maxlength="4" size="4" class="text" onchange="setLimit(this.id)"/>
+		</li>
+	</ul>
+  </td>  
+  <td >
+	&nbsp;&nbsp;
+  </td>   
+  </tr>
+  </table>
+  
+  <table border="0">
+  <tr>
+  <td align="center" valign="bottom">
+	<input id="newValueButton" type="button" class="button blue" value="New Time" onclick="generateNew()"/>
+	<input id="repeatButton" type="button" class="button white invisible" value="Repeat Amount" onclick="playNumber(true)"/>
+  </td>
+  <td align="center" valign="bottom">
+
+
+  </td>
+  <td align="center" valign="bottom">
+	&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  </td>
+  <td align="center" valign="bottom">
+	<div id="word-response-container" class="hidden"><div id="responseWords" class="text"></div></div>
+  </td>  
+  </tr>
+  </table>
+  
+	<div class="relative">
+		<div id="keypadContainer" class="invisible"></div>
+		<div id="guessResult">
+			<span class="text invisible" id="guess">&nbsp;<span id="guessedField"></span>
+			</span><br /><br /> <input id="checkAnswerButton" class="button blue invisible"	type="button" value="Done...check my guess" onclick="checkNumberSet()" />
+		</div>
+		<div id="score" class="text"></div>
+		<div id="footer" class="text">
+			<div class="relative">
+	  	  		<a id="otherToolsLink" class="text footerLink localeLink" href="index.html"></a>
+	  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+				<a id="suggestionLink" class="text footerLink" href="mailto:suggestions@learnmynumbers.com?subject=Suggestion for Learn My Numbers"></a>
+	  	  		&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+	  	  		&copy; Summit Hill Software, Inc
+			</div>
+		</div>
+	</div>
+	<!--  <br/><input type="button" value="Test Sound" onclick="testSound()"/> -->
+
+</body>
+</html>

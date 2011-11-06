@@ -1,0 +1,180 @@
+<!-- Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA  -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<!-- saved from url=(0014)about:internet -->
+<head>
+    <title>Learn My Numbers - Sound Tester</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <link href="css/base.css" rel="stylesheet" type="text/css"/> 
+    <link href="css/jquery-ui-1.8.11.custom.css" rel="stylesheet" type="text/css"/> 
+	<script type="text/javascript" src="js/jquery-1.5.1.min.js" ></script>
+	<script type="text/javascript" src="js/jquery-ui-1.8.12.custom.min.js"></script>
+	<script type="text/javascript" src="soundmanager2/script/soundmanager2.js"></script>
+	<script type="text/javascript" src="js/common.js"></script>
+	<script type="text/javascript" src="js/SoundPlayer.js"></script>
+
+	<script type="text/javascript">
+		function getQueryParameters() {
+		    var result = {};
+		    window.location.search.replace(/([^?&=]+)(=([^&]*))?/g, function(str, p1, p2, p3) {
+		        result[unescape(p1)] = unescape(p3);
+		        return str;
+		    });
+		    return result;
+		}
+		
+		function playSounds(arrayOfSoundNames, callback) {
+			soundPlayer.loadAndPlaySounds(arrayOfSoundNames, callback);
+		}
+
+		function isEmpty(value) {
+			return value == null || jQuery.trim(value) == '';	
+		}
+		
+		function populatePageSoundList(serverResponse, folderName) {
+			var html = [];
+			html[html.length] = '<table border="0"><tr>';
+			appendToHtml(html, serverResponse.soundNames);
+			appendToHtml(html, serverResponse.recentNames, 'RECENTLY UPDATED');
+			html[html.length] = '</tr></table>';
+			$('#soundNames').html(html.join(''));
+			$('#folderName').html('"' + folderName + '"');
+		}
+		
+		function appendToHtml(html, listOfNames, title) {
+			var namesInCell = 0;
+			var displayedTitle = false;
+			for ( var i = 0; i < listOfNames.length; i++) {
+				if (namesInCell == 0) {
+					html[html.length] = '<td valign="top">';
+					if (title && displayedTitle == false) {
+						displayedTitle = true;
+						html[html.length] =  '<br/>' + title + '<br/>';
+					}
+				}
+				html[html.length] = '<br/><a href="javascript:void(0)" onclick="playSound(\'';
+				html[html.length] = listOfNames[i];
+				html[html.length] = '\')">';
+				html[html.length] = listOfNames[i];
+				html[html.length] = '</a>&nbsp;&nbsp;&nbsp;';
+				namesInCell++;
+				if (namesInCell > 20) {
+					html[html.length] = '</td>';
+					namesInCell = 0;
+				}
+			}
+			if (namesInCell != 0) {
+				html[html.length] = '</td>';
+			}
+		}
+		
+		function playSound(soundName, playComparisonSoundAlso) {
+			$('#lastSoundPlayed').html(soundName);	
+			var sounds = [];
+			var comparisonSound = getComparisonSound();
+			if (playComparisonSoundAlso && comparisonSound != null && comparisonSound != '') {
+				sounds.push(comparisonSound);
+			}
+			sounds.push(soundName);
+			playSounds(sounds);
+		}
+		
+		function setComparisonSound() {
+			$('#comparisonSound').html($('#lastSoundPlayed').html());
+		}
+		
+		function getComparisonSound() {
+			return $('#comparisonSound').html();
+		}
+		
+		function clearComparisonSound() {
+			$('#comparisonSound').html('');
+		}
+		
+		function replay(playComparisonSoundAlso) {
+			playSound($('#lastSoundPlayed').html(), playComparisonSoundAlso);
+		}
+		
+		function getSounds() {
+			var folder = $('#langSubFolderName').val();
+			folder = jQuery.trim(folder);
+			if (folder == '') {
+				folder = 'us';
+			} else {
+				 $.ajax({
+					   type: "GET",
+					   url:  ("http://localhost:8080/numbers/retrieveSounds?folder=" + folder),
+					   dataType: "json",
+					   success: function (data, textStatus, jqXHR) {
+						   populatePageSoundList(data, folder);
+					   },
+					   error: function(jqXHR, textStatus, errorThrown) {
+						   alert('Error calling sever:' + JSON.stringify(jqXHR));
+					   }
+					 });
+			}
+		}
+		
+		$(function() {
+			// set folder from query param (or use default if no query param)
+			var folder = getQueryParameters().folder;
+			if (folder == null || jQuery.trim(folder) == '') {
+				folder = 'us';
+			}
+			$('#langSubFolderName').val(folder);
+			soundPlayer = new SoundPlayer(folder);
+			
+			// set comparison value from query param
+			var comparison = getQueryParameters().comparison;
+			if (comparison != null && jQuery.trim(comparison) != '') {
+				$('#comparisonSound').html(jQuery.trim(comparison));
+			}
+
+			// reload the sounds
+			getSounds();
+		});
+
+		function refresh() {
+			var folder = $('#langSubFolderName').val();
+			folder = jQuery.trim(folder);
+			if (folder == null || folder == '') {
+				alert("You must set a folder (e.g., 'us' or 'fr')");
+			} else {
+				var url = location.href;
+				var qsPos = url.indexOf("?");
+				if (qsPos > 0) {
+					url = url.substring(0, qsPos);
+				}
+				url = url + "?folder=" + folder;
+				var comparisonSound = getComparisonSound();
+				if (comparisonSound != null && comparisonSound != '') {
+					url = url + "&comparison=" + comparisonSound;
+				}
+				location.href=url;
+			}
+		} 
+		
+
+		
+	</script>
+	
+</head>
+<body>
+<h1>Sounds Tester</h1>
+<div>Folder Name (e.g., 'us' or 'fr'):&nbsp;&nbsp;<input id="langSubFolderName" type="text"/><input type="button" value="Refresh Sounds" onclick="refresh()"/>
+&nbsp;&nbsp;&nbsp;You must clear cache and refresh sounds to hear a file you just saved</div>
+<div>
+<br />
+<div>Current sounds in folder <span id="folderName"/>:</div>
+<div id="soundNames"/>
+</div>
+<div><br/>Last Sound Played:&nbsp;&nbsp;&nbsp;<b><span id="lastSoundPlayed"></span>&nbsp;&nbsp;&nbsp;</b>
+<input type="button" value="Play Again" onclick="replay(false)"/>&nbsp;&nbsp;&nbsp;
+<input type="button" value="Play Again With Comparison" onclick="replay(true)"/>&nbsp;&nbsp;&nbsp;
+<input type="button" value="Use as Comparison Sound" onclick="setComparisonSound()"/>
+</div>
+<div><br/>Comparison Sound (will play before sound played):&nbsp;&nbsp;&nbsp;<b><span id="comparisonSound"></span></b>
+<input type="button" value="Clear" onclick="clearComparisonSound()"/></div>
+</body>
+</html>

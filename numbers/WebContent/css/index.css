@@ -1,0 +1,11 @@
+/* Copyright (C) 2011 by Summit Hill Software, Inc, St. Paul, MN, USA */
+
+#suggestionLink {
+	text-decoration:none;
+}
+.separatorColumnMedium {
+	width: 200px;
+}
+.separatorColumnNarrow {
+	width: 100px;
+}
